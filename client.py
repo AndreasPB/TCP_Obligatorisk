@@ -2,10 +2,9 @@ import socket
 from datetime import datetime
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 import re
 
-# CLIENT CONSTANTS
+# CLIENT KONSTANTER
 SERVER = socket.gethostbyname(socket.gethostname())
 PORT = 1337
 ADDR = (SERVER, PORT)
@@ -14,21 +13,21 @@ FORMAT = 'utf-8'
 DDOS_MESSAGE = "can you handle this?"
 LAST_MESSAGE_TIME = datetime.now()
 MSG_COUNT = 0
-# A means to be able to stop while loops in other threads
+# For at være i stand til at loope i andre tråde
 ACTIVE = True
 
-# Default these to false, then check config for true
+# Default værdier, bliver overskrevet af config-filen
 KEEP_ALIVE = False
-DDOS_ACTIVE = False
-# READ CONFIG FOR CONSTANT VALUES
+DDOS_PROTECTION = False
+# LÆS CONFIG FOR VALUES
 config = open("opt.config", "r")
 
 lines = config.readlines()
 for line in lines:
     if line.startswith("KEEP_ALIVE : True"):
         KEEP_ALIVE = True
-    if line.startswith("DDOS_ACTIVE : True"):
-        DDOS_ACTIVE = True
+    if line.startswith("DDOS_PROTECTION : True"):
+        DDOS_PROTECTION = True
     if line.startswith("DDOS_AMOUNT"):
         DDOS_AMOUNT = int(line.replace("DDOS_AMOUNT : ", ""))
 
@@ -37,16 +36,15 @@ config.close()
 # SOCKET VARIABLE
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-
 def send(msg):
     # Define a new variable and encode it to bytes with given FORMAT constant
+    # Ny variabel der for encoded beskeden til bytes ud fra FORMAT konstanten
     message = msg.encode(FORMAT)
     msg_length = len(message)
     send_length = str(msg_length).encode(FORMAT)
     send_length += b' ' * (HEADER - len(send_length))
     client.send(send_length)
     client.send(message)
-    LAST_MESSAGE_TIME = datetime.now()
 
 
 def receive_msg():
@@ -78,14 +76,13 @@ def listen():
             if received_msg_count - MSG_COUNT != 1 and received_msg_count != 0:
                 raise ConnectionResetError
 
-            # Set the new message count to the received plus 1
             MSG_COUNT = received_msg_count + 1
 
         except ConnectionResetError:
             break
 
         print(msg)
-        # Simply for performance
+        # Performance trick
         time.sleep(0.1)
 
 
@@ -99,6 +96,8 @@ def talk():
             LAST_MESSAGE_TIME = datetime.now()
         except OSError:
             print("Connection no longer active")
+
+
 
 
 def heartbeat():
@@ -117,16 +116,16 @@ def heartbeat():
         time.sleep(0.1)
 
 
-def DDOS():
-    while DDOS_ACTIVE:
+def ddos_protector():
+    while DDOS_PROTECTION:
         send(DDOS_MESSAGE)
         time.sleep(1 / DDOS_AMOUNT)
 
 
 # Start of Client
 def connect_to_server():
-    # Client tries to connect to server
-    # If connection is refused, it tries again 1 second later
+    # Client prøver at forbinde til serveren
+    # Hvis forsøget mislykkes, venter client 1 sekund og prøver igen
     while True:
         print(f"Attempting to connect to {SERVER} on port {PORT}")
         try:
@@ -155,7 +154,7 @@ def init_handshake():
         send("com-0 accept")
         listen_thread = threading.Thread(target=listen).start()
         heartbeat_thread = threading.Thread(target=heartbeat).start()
-        ddos_thread = threading.Thread(target=DDOS).start()
+        ddos_thread = threading.Thread(target=ddos_protector).start()
         talk()
 
     else:
@@ -167,7 +166,7 @@ def init_handshake():
 
 def ip_validator(string):
     try:
-        # Check for valid IP address
+        # Checker efter en valid IP adresse
         socket.inet_aton(string)
         return True
     except socket.error:

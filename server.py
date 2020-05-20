@@ -1,10 +1,11 @@
+import parser
 import socket
 import threading
 from datetime import datetime
 import time
 import re
 
-# SERVER CONSTANTS
+# SERVER KONSTANTER
 PORT = 1337
 # Henter min lokale IP
 SERVER_IP = socket.gethostbyname(socket.gethostname())
@@ -16,7 +17,10 @@ FORMAT = 'utf-8'
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_socket.bind(ADDR)
 
-# READ CONFIG FOR CONSTANT VALUES
+spam_detected = False
+spam_count = 0
+
+# LÆS CONFIG FOR VALUES
 config = open("opt.config", "r")
 
 lines = config.readlines()
@@ -27,20 +31,20 @@ for line in lines:
 config.close()
 
 
-def log(conn, str):
-    # "a" for append
+def log(conn, string):
+    # "a" appender
     logger = open("handshakes.log", "a")
-    logger.write(f"[{conn}] {datetime.now()} {str}\n")
+    logger.write(f"[{conn}] {datetime.now()} {string}\n")
     logger.close()
 
 
 def start_server():
-    # Listen on the server socket
+    # Lytter til server socket
     server_socket.listen()
     print(f"{datetime.now()} [LISTENING] Server is listening on {SERVER_IP}")
     while True:
         conn, addr = server_socket.accept()
-        # Receive first message from client
+        # Modtager først besked fra client
         client_request_msg = receive_msg(conn)
         log(addr, client_request_msg)
 
@@ -57,6 +61,7 @@ def start_server():
             client_thread = threading.Thread(target=client_handler, args=(conn, addr))
             client_thread.start()
             print(f"[ACTIVE CONNECTIONS] {threading.activeCount() - 1}")
+            reset_spam()
         else:
             # Send deny message if it is not correct IP / Handshake step 2
             reply_message = f"com-0 deny {SERVER_IP}"
@@ -77,13 +82,14 @@ def ip_validator(string):
 
 def send(conn, msg):
     # Define a new variable and encode it to bytes with given FORMAT constant
+    global spam_count
     message = msg.encode(FORMAT)
     msg_length = len(message)
     send_length = str(msg_length).encode(FORMAT)
     send_length += b' ' * (HEADER - len(send_length))
     conn.send(send_length)
     conn.send(message)
-    LAST_SENT_MESSAGE_TIME = datetime.now()
+    spam_count += 1
 
 
 def receive_msg(conn):
@@ -95,6 +101,23 @@ def receive_msg(conn):
         # Set the msg_length variable equal to int typecast of the received (and decoded) bytes.
         msg_length = int(msg_length)
         return conn.recv(msg_length).decode(FORMAT)
+
+
+def reset_spam():
+    global spam_count
+    threading.Timer(1.0, reset_spam).start()
+    print("Beskeder i sekundet: " + str(spam_count))
+    spam_count = 0
+    # TODO: max antal packages if else/exeption
+
+
+def check_for_spam():
+    while True:
+        global spam_count
+        if spam_count > int(parser.get('MAX_PACKETS')):
+            global spam_detected
+            spam_detected = True
+            print("SPAAAAM")
 
 
 def client_handler(conn, addr):
@@ -139,6 +162,8 @@ def client_handler(conn, addr):
             print(f'{datetime.now()} [{addr}] sent illegal message count')
             break
 
+        # Ikke den fedeste måde at gøre det på
+        # Gør at to beskeder ikke kan komme inde for den samme brøkdel af et sekund -> ConnectionRefusedError
         time.sleep(1 / MAX_PACKETS)
 
 
